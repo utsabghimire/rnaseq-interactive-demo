@@ -1,44 +1,45 @@
 # RNA‑seq Analysis Workflow Demo
 
-This repository contains an interactive notebook that illustrates the **end‑to‑end analysis of RNA‑seq data**, from raw sequencing files through to differential expression results and visualisation.  
+This repository demonstrates a step‑by‑step analysis of **RNA‑seq data**, from raw sequencing files through to differential expression results and visualisation.  The workflow is inspired by our study of unique molecular mechanisms underlying postharvest senescence in broccoli, but it can be adapted to any RNA‑seq experiment.
 
-The workflow is based on the analysis performed in our study of unique molecular mechanisms underlying postharvest senescence in broccoli.  It demonstrates how to download raw data, perform quality control and trimming on a high‑performance computing (HPC) cluster, align reads to a reference genome, generate gene counts, and carry out differential expression analysis in R.  Finally, it shows how to visualise and explore the results interactively in Python.
+Unlike a traditional Jupyter notebook, the workflow is encapsulated in a single Python script (`rna_seq_workflow.py`) that combines shell commands, R code and Python code.  This script illustrates each stage of the pipeline, from downloading raw reads on an HPC cluster through to exploring differential expression results interactively.  Realistic file names and directory paths (e.g. `/home/utsab/projects/rnaseq/raw_data`) are used throughout to help you tailor the commands to your own environment.
 
 ## Repository structure
 
 ```
 rnaseq_interactive_demo/
-├── README.md              # This file
-├── rna_seq_workflow.ipynb # Jupyter notebook with step‑by‑step analysis
-├── streamlit_app.py       # Simple Streamlit app to explore DE results
-├── requirements.txt       # Python dependencies for the notebook/Streamlit
-└── LICENSE                # MIT licence
+├── README.md             # This file
+├── rna_seq_workflow.py   # Python script
+``` with step‑by‑step analysis
+├── streamlit_app.py      # Streamlit app to explore DE results
+├── requirements.txt      # Python dependencies for the workflow and Streamlit
+└── LICENSE               # MIT licence
 ```
 
-### Notebook overview
+### Workflow overview
 
-The notebook walks through the following major steps:
+The `rna_seq_workflow.py` script walks through the following major steps:
 
-1. **Data retrieval** – download raw FASTQ files from NCBI’s SRA using `prefetch` and `fastq‑dump`.
-2. **Quality control** – run FastQC and summarise reports with MultiQC.
-3. **Trimming** – remove adapters and low‑quality bases with Trim Galore.
-4. **Alignment** – build a reference index and align reads to it using STAR.
-5. **Quantification** – count reads per gene with featureCounts.
-6. **Differential expression analysis** – import counts into R/edgeR, normalise, build a design matrix, and test contrasts using limma‑voom.
-7. **Visualisation and exploration** – create a volcano plot in R and load results into Python for interactive exploration with Plotly and Streamlit.
+1. **Data retrieval** – Use the SRA Toolkit (`prefetch` and `fastq‑dump`) to download raw FASTQ files from the NCBI Sequence Read Archive.  Example directories and file names (e.g. `/home/utsab/projects/rnaseq/raw_data/SRR1234567_1.fastq.gz`) mirror those used in our study.
+2. **Quality control** – Run FastQC on the raw reads and summarise reports using MultiQC.
+3. **Trimming** – Remove adapters and low‑quality bases with Trim Galore.
+4. **Alignment** – Build a STAR genome index and align trimmed reads to a reference genome.
+5. **Quantification** – Count reads per gene with featureCounts (part of the Subread package).
+6. **Differential expression analysis** – Switch to R (edgeR/limma‑voom) to normalise counts, define your experimental design, and test contrasts.  The script prints a ready‑to‑run R script that you can copy into an R session.
+7. **Visualisation and exploration** – Use Python and Plotly to generate an interactive volcano plot and summarise differential expression results.  A Streamlit app is provided for easy browsing of the results.
 
-Throughout the notebook you’ll see realistic file names and HPC paths (e.g. `/home/utsab/projects/rnaseq/raw_data`), so you can adapt the commands to your own environment.  Code cells include both shell commands (for use on an HPC login node) and R/Python code.  Comments explain the purpose of each step.
+Each stage includes realistic HPC paths and explanatory comments, allowing you to adapt the workflow to your own system.
 
 ### Streamlit app
 
-For a lightweight web interface, the repository also includes a minimal `streamlit_app.py`.  After running the notebook and exporting differential expression results to CSV, you can launch the app locally with:
+For a lightweight web interface, the repository includes a minimal `streamlit_app.py`.  After running the workflow and exporting differential expression results to CSV (e.g. `DE_results_36h_vs_0h.csv`), you can launch the app locally with:
 
 ```bash
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-The app displays the full DE results table and allows basic filtering and sorting via the Streamlit interface.
+The app displays an interactive volcano plot and a searchable, sortable table of the differential expression results.
 
 ### Requirements
 
