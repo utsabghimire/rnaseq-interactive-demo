@@ -1,21 +1,14 @@
-# venn_app.py
 import io
 import re
 from typing import Dict, List, Set, Tuple
-
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 
-# For up to 3 sets (exact Venn)
 from matplotlib_venn import venn2, venn3
-
-# For 4–6 sets (approximate Venn)
 from venn import venn as venn_up_to_6
 
-
 st.set_page_config(page_title="Multi-Set Venn (up to 6)", layout="wide")
-
 
 # -----------------------------
 # Helpers
@@ -24,7 +17,6 @@ def coerce_items(text: str, split_mode: str, case_sensitive: bool) -> Set[str]:
     if not text:
         return set()
     if split_mode == "Auto":
-        # split by newline or comma or tab/semicolon/pipe
         parts = re.split(r"[\n,\t;|]+", text)
     elif split_mode == "Newlines (one per line)":
         parts = re.split(r"\n+", text)
@@ -48,96 +40,74 @@ def coerce_items(text: str, split_mode: str, case_sensitive: bool) -> Set[str]:
             cleaned.append(s)
     return set(cleaned)
 
-
 def read_file_to_set(file, split_mode: str, case_sensitive: bool) -> Set[str]:
-    # Try CSV/TSV with header; fall back to plain text list
     try:
         if file.name.lower().endswith((".tsv",)):
             df = pd.read_csv(file, sep="\t")
         else:
             df = pd.read_csv(file)
-        # If there is exactly one column, take it; otherwise ask user to select later (handled below)
         if df.shape[1] == 1:
             col = df.columns[0]
             series = df[col].dropna().astype(str).tolist()
             text = "\n".join(series)
             return coerce_items(text, "Newlines (one per line)", case_sensitive)
         else:
-            # If multi-column, flatten all non-empty cells to strings
             flat = df.astype(str).values.ravel().tolist()
             text = "\n".join([x for x in flat if x and x.lower() != "nan"])
             return coerce_items(text, "Newlines (one per line)", case_sensitive)
     except Exception:
-        # Plain text
         file.seek(0)
         text = file.read().decode("utf-8", errors="ignore")
         return coerce_items(text, split_mode, case_sensitive)
 
-
-def sets_to_intersections(sets_dict: Dict[str, Set[str]]) -> pd.DataFrame:
-    """Return a table of intersections for all non-empty combinations."""
+def sets_to_intersections(sets_dict: Dict[str, Set[str]]) -> Tuple[pd.DataFrame, Dict[str, Set[str]]]:
+    from itertools import combinations
     names = list(sets_dict.keys())
     data = []
-    n = len(names)
-    from itertools import combinations
-    for k in range(1, n + 1):
+    inter_dict = {}
+    for k in range(1, len(names) + 1):
         for comb in combinations(names, k):
             inter = set.intersection(*(sets_dict[name] for name in comb))
-            # Subtract elements that appear in supersets to report exact regions?
-            # For simplicity show raw intersections by combo.
-            data.append({
-                "Sets": " ∩ ".join(comb),
-                "Size": len(inter)
-            })
+            comb_key = " ∩ ".join(comb)
+            data.append({"Sets": comb_key, "Size": len(inter)})
+            inter_dict[comb_key] = inter
     df = pd.DataFrame(data).sort_values(["Size", "Sets"], ascending=[False, True])
-    return df
+    return df, inter_dict
 
-
-def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str]):
+def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], venn_title: str, title_fontsize: int, label_fontsize: int, label_fontstyle: str):
     names = list(sets_dict.keys())
     n = len(names)
-    assert n in (2, 3)
     plt.figure(figsize=(7, 6), dpi=180)
     if n == 2:
         a, b = sets_dict[names[0]], sets_dict[names[1]]
         v = venn2([a, b], set_labels=(names[0], names[1]))
-        # color each set
-        if v.get_patch_by_id("10"): v.get_patch_by_id("10").set_color(colors[0]); v.get_patch_by_id("10").set_alpha(0.5)
-        if v.get_patch_by_id("01"): v.get_patch_by_id("01").set_color(colors[1]); v.get_patch_by_id("01").set_alpha(0.5)
-        if v.get_patch_by_id("11"): v.get_patch_by_id("11").set_color(colors[0]); v.get_patch_by_id("11").set_alpha(0.3)
     else:
         a, b, c = [sets_dict[n] for n in names]
         v = venn3([a, b, c], set_labels=(names[0], names[1], names[2]))
-        # set-specific base colors with alpha; overlaps get blended appearance
-        base_ids = {"100": 0, "010": 1, "001": 2}
-        for rid, idx in base_ids.items():
-            patch = v.get_patch_by_id(rid)
-            if patch:
-                patch.set_color(colors[idx])
-                patch.set_alpha(0.5)
-        # overlaps slightly more transparent
-        for rid in ("110", "101", "011", "111"):
-            patch = v.get_patch_by_id(rid)
-            if patch:
-                patch.set_alpha(0.35)
+
+    for label in v.set_labels:
+        if label:
+            label.set_fontsize(label_fontsize)
+            label.set_fontstyle(label_fontstyle)
+    for label in v.subset_labels:
+        if label:
+            label.set_fontsize(label_fontsize)
+            label.set_fontstyle(label_fontstyle)
+
+    plt.title(venn_title, fontsize=title_fontsize)
     st.pyplot(plt.gcf(), use_container_width=True)
     return plt.gcf()
 
-
-def draw_venn_4_6(sets_dict: Dict[str, Set[str]], colors: List[str]):
-    # The 'venn' package supports up to 6 sets (approximate). It uses a colormap for regions.
-    # We’ll build a custom ListedColormap that cycles the chosen set colors for visual consistency.
+def draw_venn_4_6(sets_dict: Dict[str, Set[str]], colors: List[str], venn_title: str, title_fontsize: int, label_fontsize: int):
     import matplotlib.colors as mcolors
-    # Create a long colormap from chosen colors; regions > len(colors) will reuse
     cmap = mcolors.ListedColormap(colors)
     plt.figure(figsize=(9, 8), dpi=180)
-    ax = venn_up_to_6(sets_dict, cmap=cmap)  # draws on current axes
-    # Label style tweaks
+    ax = venn_up_to_6(sets_dict, cmap=cmap)
     for text in ax.texts:
-        text.set_fontsize(10)
+        text.set_fontsize(label_fontsize)
+    plt.title(venn_title, fontsize=title_fontsize)
     st.pyplot(plt.gcf(), use_container_width=True)
     return plt.gcf()
-
 
 def fig_download_buttons(fig):
     col1, col2 = st.columns(2)
@@ -150,7 +120,6 @@ def fig_download_buttons(fig):
         fig.savefig(svg_buf, format="svg", bbox_inches="tight")
         st.download_button("⬇️ Download SVG", svg_buf.getvalue(), file_name="venn.svg", mime="image/svg+xml")
 
-
 # -----------------------------
 # UI
 # -----------------------------
@@ -159,7 +128,7 @@ st.title("Venn Diagram Builder (up to 6 sets)")
 with st.sidebar:
     st.header("Input options")
     mode = st.radio("How will you provide sets?", ["Upload files", "Paste lists"], index=0)
-    n_sets = st.slider("Number of sets", 2, 6, 3, help="Venn diagrams need ≥2 sets")
+    n_sets = st.slider("Number of sets", 2, 6, 3)
 
     st.subheader("Parsing")
     split_mode = st.selectbox(
@@ -175,20 +144,25 @@ with st.sidebar:
     set_colors = []
     for i in range(n_sets):
         with st.container():
-            set_names.append(st.text_input(f"Name for Set {i+1}", value=default_names[i], key=f"name_{i}"))
-            set_colors.append(st.color_picker(f"Color for {default_names[i]}", value=["#4c78a8", "#f58518", "#54a24b", "#e45756", "#72b7b2", "#b279a2"][i % 6], key=f"color_{i}"))
-    st.caption("Tip: Colors apply per-set for 2–3 set diagrams; 4–6 sets use an approximate layout with a colormap derived from your picks.")
+            set_names.append(
+                st.text_input(f"Label for Set {i+1}", value=default_names[i], key=f"name_{i}")
+            )
+            set_colors.append(
+                st.color_picker(f"Color for {default_names[i]}", value=["#4c78a8", "#f58518", "#54a24b", "#e45756", "#72b7b2", "#b279a2"][i % 6], key=f"color_{i}")
+            )
+
+    st.markdown("---")
+    st.subheader("Venn diagram title & font style")
+    venn_title = st.text_input("Main title for the Venn diagram", value="Venn Diagram")
+    title_fontsize = st.slider("Title font size", 10, 40, 20)
+    label_fontsize = st.slider("Region number font size", 6, 20, 10)
+    label_fontstyle = st.selectbox("Region label font style", ["normal", "italic", "oblique"], index=0)
 
 # Collect sets
 sets_dict: Dict[str, Set[str]] = {}
-
 if mode == "Upload files":
-    files = st.file_uploader(
-        f"Upload up to {n_sets} files (TXT/CSV/TSV). Each file represents **one set**.",
-        type=["txt", "csv", "tsv"], accept_multiple_files=True
-    )
+    files = st.file_uploader("Upload files (TXT/CSV/TSV). One file = one set.", type=["txt", "csv", "tsv"], accept_multiple_files=True)
     if files:
-        # Use first n_sets files
         files = files[:n_sets]
         for i, f in enumerate(files):
             items = read_file_to_set(f, split_mode, case_sensitive)
@@ -197,34 +171,43 @@ elif mode == "Paste lists":
     cols = st.columns(min(3, n_sets))
     text_blobs: List[str] = ["" for _ in range(n_sets)]
     for i in range(n_sets):
-        text_blobs[i] = st.text_area(f"Items for {set_names[i]} (one per line or separated by your chosen delimiter)",
-                                     height=140, key=f"paste_{i}")
+        text_blobs[i] = st.text_area(f"Items for {set_names[i]}", height=140, key=f"paste_{i}")
     for i in range(n_sets):
         sets_dict[set_names[i]] = coerce_items(text_blobs[i], split_mode, case_sensitive)
 
-# Show sizes and proceed
+# Plot and show results
 if sets_dict and all(len(s) > 0 for s in sets_dict.values()):
     st.subheader("Set sizes")
     size_df = pd.DataFrame({"Set": list(sets_dict.keys()), "Size": [len(s) for s in sets_dict.values()]})
     st.dataframe(size_df, use_container_width=True)
 
     st.subheader("Venn diagram")
-    n = len(sets_dict)
     fig = None
     try:
-        if n in (2, 3):
-            fig = draw_venn_2_3(sets_dict, set_colors[:n])
+        if n_sets in (2, 3):
+            fig = draw_venn_2_3(sets_dict, set_colors[:n_sets], venn_title, title_fontsize, label_fontsize, label_fontstyle)
         else:
-            fig = draw_venn_4_6(sets_dict, set_colors[:n])
+            fig = draw_venn_4_6(sets_dict, set_colors[:n_sets], venn_title, title_fontsize, label_fontsize)
     except Exception as e:
         st.error(f"Could not draw Venn: {e}")
 
     if fig:
         fig_download_buttons(fig)
 
-    st.subheader("Intersection sizes")
-    inter_df = sets_to_intersections(sets_dict)
+    st.subheader("Intersection sizes and downloads")
+    inter_df, inter_dict = sets_to_intersections(sets_dict)
     st.dataframe(inter_df, use_container_width=True)
 
+    for combo, items in inter_dict.items():
+        if not items:
+            continue
+        csv = "\n".join(sorted(items))
+        st.download_button(
+            label=f"⬇️ Download items in: {combo} ({len(items)} items)",
+            data=csv,
+            file_name=f"intersection_{combo.replace(' ∩ ', '_')}.txt",
+            mime="text/plain"
+        )
+
 else:
-    st.info("Add content for each set (upload files or paste lists). Each set must contain at least one item.")
+    st.info("Please upload or paste valid sets (≥1 item each).")
