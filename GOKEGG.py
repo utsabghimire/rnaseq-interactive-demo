@@ -1,117 +1,87 @@
-import io
+# go_kegg_app.py
 import pandas as pd
 import streamlit as st
+import scipy.stats as stats
 import plotly.express as px
-from scipy.stats import fisher_exact
-from collections import defaultdict
+import io
 
-st.set_page_config(page_title="GO/KEGG Enrichment Analyzer", layout="wide")
-st.title("🧬 GO and KEGG Enrichment Analysis")
+st.set_page_config(layout="wide", page_title="GO/KEGG Enrichment App")
+st.title("🧬 GO & KEGG Enrichment Explorer")
+st.markdown("Upload gene list and annotation files to compute enrichment, then visualize results.")
 
-# Sidebar settings
+# Sidebar options
 with st.sidebar:
-    st.header("Settings")
-    mode = st.radio("Species Mode", ["Model Organism (Auto)", "Custom Species"])
-    font_title = st.slider("Plot Title Font Size", 10, 40, 20)
-    font_label = st.slider("Axis Label Font Size", 8, 24, 14)
-    font_tick = st.slider("Tick Font Size", 6, 20, 12)
-    max_terms = st.slider("Top N GO Terms to Display", 5, 50, 20)
-    color_scale = st.selectbox("Bar Color Scale", px.colors.named_colorscales(), index=px.colors.named_colorscales().index("Viridis"))
+    st.header("🔧 Settings")
+    enrichment_type = st.selectbox("Enrichment Type", ["GO", "KEGG"])
+    p_cutoff = st.number_input("P-value Cutoff", 0.0, 1.0, 0.05)
+    show_terms = st.slider("Number of Top Terms to Display", 5, 100, 20)
+    correction = st.selectbox("Multiple Testing Correction", ["None", "FDR (BH)"])
+    font_size = st.slider("Font Size", 8, 24, 12)
+    color_scale = st.selectbox("Color Scale", px.colors.named_colorscales())
 
-# Upload section
-st.markdown("### 🗂️ Upload Required Files")
-with st.expander("1. Upload Gene List (Query Genes)", expanded=True):
-    query_file = st.file_uploader("Upload a file with gene list (1 column)", type=["csv", "txt"])
+# File upload
+uploaded_gene_file = st.file_uploader("Upload Gene List (one column, no header)", type=["txt", "csv"])
+uploaded_annotation_file = st.file_uploader("Upload GO/KEGG Annotation File (2 columns: Gene ID, Term)", type=["csv", "tsv"])
+uploaded_background_file = st.file_uploader("(Optional) Upload Background Gene List", type=["txt", "csv"])
 
-if mode == "Custom Species":
-    with st.expander("2. Upload GO Annotation File", expanded=True):
-        go_file = st.file_uploader("Upload GO annotation file (CSV: gene_id, go_term)", type=["csv", "tsv"])
-    with st.expander("3. Upload KEGG Mapping File (Optional)"):
-        kegg_file = st.file_uploader("Upload KEGG mapping file (CSV: gene_id, kegg_id)", type=["csv", "tsv"])
-
-# Helper functions
-def load_gene_list(file) -> set:
-    df = pd.read_csv(file, header=None)
-    return set(df.iloc[:, 0].dropna().astype(str).unique())
-
-def load_annotation_file(file, sep=",") -> pd.DataFrame:
-    df = pd.read_csv(file, sep=sep)
-    df.columns = [col.strip().lower() for col in df.columns]
-    return df[["gene_id", "go_term"]]
-
-def go_enrichment(go_df, query_genes):
-    universe = set(go_df["gene_id"])
-    total_universe = len(universe)
-    query_set = set(query_genes)
-
-    go_to_genes = defaultdict(set)
-    for _, row in go_df.iterrows():
-        go_to_genes[row["go_term"]].add(row["gene_id"])
-
-    records = []
-    for go_term, term_genes in go_to_genes.items():
-        overlap = len(query_set & term_genes)
-        term_size = len(term_genes)
-        query_size = len(query_set)
-
-        if overlap == 0:
-            continue
-
-        table = [
-            [overlap, query_size - overlap],
-            [term_size - overlap, total_universe - query_size - term_size + overlap],
-        ]
-        oddsratio, pval = fisher_exact(table, alternative="greater")
-
-        records.append({
-            "GO Term": go_term,
-            "Gene Count": overlap,
-            "Term Size": term_size,
-            "p-value": pval,
-            "Overlap Genes": ", ".join(sorted(query_set & term_genes)),
-        })
-
-    df = pd.DataFrame(records)
-    df = df.sort_values("p-value").reset_index(drop=True)
+def correct_pvals(df, method):
+    if method == "FDR (BH)":
+        from statsmodels.stats.multitest import multipletests
+        df["AdjP"] = multipletests(df["Pval"], method='fdr_bh')[1]
+    else:
+        df["AdjP"] = df["Pval"]
     return df
 
-# Enrichment analysis
-if query_file and go_file:
-    try:
-        query_genes = load_gene_list(query_file)
-        go_df = load_annotation_file(go_file, sep="," if go_file.name.endswith("csv") else "\t")
+if uploaded_gene_file and uploaded_annotation_file:
+    gene_list = pd.read_csv(uploaded_gene_file, header=None).iloc[:, 0].dropna().astype(str).tolist()
+    ann_sep = "\t" if uploaded_annotation_file.name.endswith("tsv") else ","
+    annotation_df = pd.read_csv(uploaded_annotation_file, sep=ann_sep, header=None)
+    annotation_df.columns = ["Gene", "Term"]
+    
+    background_genes = set(annotation_df["Gene"])
+    if uploaded_background_file:
+        bg_df = pd.read_csv(uploaded_background_file, header=None)
+        background_genes = set(bg_df.iloc[:, 0].astype(str))
 
-        enriched = go_enrichment(go_df, query_genes)
+    # Filter to background
+    input_genes = set(gene_list).intersection(background_genes)
+    if not input_genes:
+        st.error("No overlap between input genes and annotation.")
+    else:
+        ann_df = annotation_df[annotation_df["Gene"].isin(background_genes)]
 
-        if not enriched.empty:
-            st.markdown("### 📊 GO Term Enrichment Results")
-            st.dataframe(enriched)
-            csv = enriched.to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ Download Enrichment Table (CSV)", csv, "go_enrichment.csv", "text/csv")
+        term_map = ann_df.groupby("Term")["Gene"].apply(set).to_dict()
+        results = []
+        for term, genes_in_term in term_map.items():
+            a = len(genes_in_term & input_genes)  # overlap
+            b = len(genes_in_term - input_genes)  # in term not input
+            c = len(input_genes - genes_in_term)  # input not in term
+            d = len(background_genes - genes_in_term - input_genes)  # neither
+            table = [[a, b], [c, d]]
+            _, pval = stats.fisher_exact(table, alternative='greater')
+            results.append({"Term": term, "InputGeneCount": a, "TermGeneCount": len(genes_in_term), "Pval": pval})
 
-            # Plot
-            st.markdown("### 📈 Enrichment Plot")
-            fig = px.bar(
-                enriched.head(max_terms),
-                x="GO Term",
-                y="Gene Count",
-                color="p-value",
-                color_continuous_scale=color_scale,
-                hover_data=["Overlap Genes"],
-                title="Top Enriched GO Terms"
-            )
-            fig.update_layout(
-                title_font_size=font_title,
-                xaxis_title_font_size=font_label,
-                yaxis_title_font_size=font_label,
-                xaxis_tickfont_size=font_tick,
-                yaxis_tickfont_size=font_tick
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        res_df = pd.DataFrame(results)
+        res_df = correct_pvals(res_df, correction)
+        res_df = res_df[res_df["AdjP"] <= p_cutoff].sort_values("AdjP").head(show_terms)
 
-        else:
-            st.warning("No significant GO terms found.")
-    except Exception as e:
-        st.error(f"Error during analysis: {e}")
+        st.success(f"{len(res_df)} enriched terms found.")
+
+        st.subheader("📊 Enrichment Results")
+        st.dataframe(res_df)
+        csv_data = res_df.to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Download Enrichment CSV", csv_data, file_name="enrichment_results.csv", mime="text/csv")
+
+        st.subheader("🎨 Interactive Plot")
+        fig = px.bar(res_df, 
+                     x="InputGeneCount", 
+                     y="Term", 
+                     orientation='h',
+                     color="AdjP",
+                     color_continuous_scale=color_scale,
+                     labels={"AdjP": "Adjusted P-value"},
+                     text="InputGeneCount")
+        fig.update_layout(font=dict(size=font_size))
+        st.plotly_chart(fig, use_container_width=True)
 else:
-    st.info("Please upload both a query gene file and GO annotation file.")
+    st.warning("Please upload the required files to proceed.")
