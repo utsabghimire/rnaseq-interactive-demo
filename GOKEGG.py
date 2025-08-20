@@ -1,87 +1,90 @@
 # go_kegg_app.py
-import pandas as pd
+import os
 import streamlit as st
-import scipy.stats as stats
-import plotly.express as px
-import io
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-st.set_page_config(layout="wide", page_title="GO/KEGG Enrichment App")
-st.title("🧬 GO & KEGG Enrichment Explorer")
-st.markdown("Upload gene list and annotation files to compute enrichment, then visualize results.")
+st.set_page_config(page_title="Gene Enrichment Explorer", layout="wide")
+st.title("🧬 GO & KEGG Term Enrichment Explorer")
 
 # Sidebar options
-with st.sidebar:
-    st.header("🔧 Settings")
-    enrichment_type = st.selectbox("Enrichment Type", ["GO", "KEGG"])
-    p_cutoff = st.number_input("P-value Cutoff", 0.0, 1.0, 0.05)
-    show_terms = st.slider("Number of Top Terms to Display", 5, 100, 20)
-    correction = st.selectbox("Multiple Testing Correction", ["None", "FDR (BH)"])
-    font_size = st.slider("Font Size", 8, 24, 12)
-    color_scale = st.selectbox("Color Scale", px.colors.named_colorscales())
+species = st.sidebar.selectbox("Select species", [
+    "Arabidopsis thaliana", "Oryza sativa", "Zea mays", "Homo sapiens", "Mus musculus", "Upload custom files"
+])
 
-# File upload
-uploaded_gene_file = st.file_uploader("Upload Gene List (one column, no header)", type=["txt", "csv"])
-uploaded_annotation_file = st.file_uploader("Upload GO/KEGG Annotation File (2 columns: Gene ID, Term)", type=["csv", "tsv"])
-uploaded_background_file = st.file_uploader("(Optional) Upload Background Gene List", type=["txt", "csv"])
+font_size = st.sidebar.slider("Font size for plots", 6, 30, 12)
+fig_width = st.sidebar.slider("Figure width", 5, 20, 10)
+fig_height = st.sidebar.slider("Figure height", 3, 15, 6)
 
-def correct_pvals(df, method):
-    if method == "FDR (BH)":
-        from statsmodels.stats.multitest import multipletests
-        df["AdjP"] = multipletests(df["Pval"], method='fdr_bh')[1]
-    else:
-        df["AdjP"] = df["Pval"]
-    return df
+example_gene_sets = {
+    "Arabidopsis thaliana": ["AT1G01010", "AT1G01530", "AT1G01720"],
+    "Oryza sativa": ["LOC_Os01g01010", "LOC_Os01g01530"],
+    "Homo sapiens": ["BRCA1", "TP53", "EGFR"]
+}
 
-if uploaded_gene_file and uploaded_annotation_file:
-    gene_list = pd.read_csv(uploaded_gene_file, header=None).iloc[:, 0].dropna().astype(str).tolist()
-    ann_sep = "\t" if uploaded_annotation_file.name.endswith("tsv") else ","
-    annotation_df = pd.read_csv(uploaded_annotation_file, sep=ann_sep, header=None)
-    annotation_df.columns = ["Gene", "Term"]
-    
-    background_genes = set(annotation_df["Gene"])
-    if uploaded_background_file:
-        bg_df = pd.read_csv(uploaded_background_file, header=None)
-        background_genes = set(bg_df.iloc[:, 0].astype(str))
+st.markdown("### 1️⃣ Upload Your Gene List")
+example = example_gene_sets.get(species, [])
+example_str = ", ".join(example)
+input_gene_text = st.text_area("Paste your gene list (one per line or comma separated)", value="\n".join(example), height=150)
+gene_list = list({g.strip() for g in re.split(r'[\n,;\t ]+', input_gene_text) if g.strip()})
 
-    # Filter to background
-    input_genes = set(gene_list).intersection(background_genes)
-    if not input_genes:
-        st.error("No overlap between input genes and annotation.")
-    else:
-        ann_df = annotation_df[annotation_df["Gene"].isin(background_genes)]
+if not gene_list:
+    st.warning("Please enter a valid gene list to continue.")
+    st.stop()
 
-        term_map = ann_df.groupby("Term")["Gene"].apply(set).to_dict()
-        results = []
-        for term, genes_in_term in term_map.items():
-            a = len(genes_in_term & input_genes)  # overlap
-            b = len(genes_in_term - input_genes)  # in term not input
-            c = len(input_genes - genes_in_term)  # input not in term
-            d = len(background_genes - genes_in_term - input_genes)  # neither
-            table = [[a, b], [c, d]]
-            _, pval = stats.fisher_exact(table, alternative='greater')
-            results.append({"Term": term, "InputGeneCount": a, "TermGeneCount": len(genes_in_term), "Pval": pval})
+st.markdown("### 2️⃣ Provide GO and KEGG Annotations")
 
-        res_df = pd.DataFrame(results)
-        res_df = correct_pvals(res_df, correction)
-        res_df = res_df[res_df["AdjP"] <= p_cutoff].sort_values("AdjP").head(show_terms)
-
-        st.success(f"{len(res_df)} enriched terms found.")
-
-        st.subheader("📊 Enrichment Results")
-        st.dataframe(res_df)
-        csv_data = res_df.to_csv(index=False).encode('utf-8')
-        st.download_button("⬇️ Download Enrichment CSV", csv_data, file_name="enrichment_results.csv", mime="text/csv")
-
-        st.subheader("🎨 Interactive Plot")
-        fig = px.bar(res_df, 
-                     x="InputGeneCount", 
-                     y="Term", 
-                     orientation='h',
-                     color="AdjP",
-                     color_continuous_scale=color_scale,
-                     labels={"AdjP": "Adjusted P-value"},
-                     text="InputGeneCount")
-        fig.update_layout(font=dict(size=font_size))
-        st.plotly_chart(fig, use_container_width=True)
+if species != "Upload custom files":
+    go_file = f"data/{species.split()[0].lower()}_go.tsv"
+    kegg_file = f"data/{species.split()[0].lower()}_kegg.tsv"
+    if not os.path.exists(go_file) or not os.path.exists(kegg_file):
+        st.error(f"Missing preloaded annotation files for {species}. Please upload manually.")
+        st.stop()
+    go_df = pd.read_csv(go_file, sep="\t", names=["GeneID", "GO"])
+    kegg_df = pd.read_csv(kegg_file, sep="\t", names=["GeneID", "Pathway"])
 else:
-    st.warning("Please upload the required files to proceed.")
+    go_upload = st.file_uploader("Upload GO annotations (TSV: GeneID TAB GO)", type=["tsv"])
+    kegg_upload = st.file_uploader("Upload KEGG annotations (TSV: GeneID TAB Pathway)", type=["tsv"])
+    if go_upload and kegg_upload:
+        go_df = pd.read_csv(go_upload, sep="\t", names=["GeneID", "GO"])
+        kegg_df = pd.read_csv(kegg_upload, sep="\t", names=["GeneID", "Pathway"])
+    else:
+        st.stop()
+
+# Enrichment function
+def enrich(annotations, label):
+    bg_total = annotations.shape[0]
+    fg_total = len(gene_list)
+    filtered = annotations[annotations.GeneID.isin(gene_list)]
+    counts = filtered[label].value_counts().reset_index()
+    counts.columns = [label, "Count"]
+    counts["Total"] = annotations[label].value_counts()
+    counts["Enrichment"] = (counts["Count"] / fg_total) / (counts["Total"] / bg_total)
+    return counts.sort_values("Enrichment", ascending=False).head(30)
+
+# Plot function
+def plot_enrichment(df, label, title):
+    plt.figure(figsize=(fig_width, fig_height))
+    sns.barplot(data=df, y=label, x="Enrichment", palette="viridis")
+    plt.title(title, fontsize=font_size + 4)
+    plt.xlabel("Fold Enrichment", fontsize=font_size)
+    plt.ylabel(label, fontsize=font_size)
+    plt.xticks(fontsize=font_size)
+    plt.yticks(fontsize=font_size)
+    st.pyplot(plt.gcf())
+
+# Results
+st.markdown("### 3️⃣ Results")
+go_enriched = enrich(go_df, "GO")
+kegg_enriched = enrich(kegg_df, "Pathway")
+
+with st.expander("GO Term Enrichment"):
+    plot_enrichment(go_enriched, "GO", "Top GO Terms")
+    st.dataframe(go_enriched)
+    st.download_button("Download GO Enrichment CSV", go_enriched.to_csv(index=False).encode(), "go_enrichment.csv")
+
+with st.expander("KEGG Pathway Enrichment"):
+    plot_enrichment(kegg_enriched, "Pathway", "Top KEGG Pathways")
+    st.dataframe(kegg_enriched)
+    st.download_button("Download KEGG Enrichment CSV", kegg_enriched.to_csv(index=False).encode(), "kegg_enrichment.csv")
