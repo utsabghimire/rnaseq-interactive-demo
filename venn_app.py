@@ -95,14 +95,19 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str)
                 patch.set_alpha(0.5)
     return plt.gcf()
 
-def draw_venn_4_6(sets_dict: Dict[str, Set[str]], colors: List[str], title: str) -> plt.Figure:
-    fig = plt.figure(figsize=(9, 8), dpi=180)
-    plt.title(title, fontsize=16)
-    cmap = mcolors.ListedColormap(colors)
+def draw_venn_4_6(sets_dict, colors, title, label_fontsize, number_fontsize):
+    import matplotlib.pyplot as plt
+    from venn import venn as venn_up_to_6
+    from matplotlib import colors as mcolors
+
+    fig = plt.figure(figsize=(10, 8), dpi=200)
+    plt.title(title, fontsize=label_fontsize + 4)
+    cmap = mcolors.ListedColormap(colors[:len(sets_dict)])
     ax = venn_up_to_6(sets_dict, cmap=cmap)
     for text in ax.texts:
-        text.set_fontsize(9)
+        text.set_fontsize(number_fontsize)
     return fig
+
 
 def fig_download_buttons(fig):
     col1, col2 = st.columns(2)
