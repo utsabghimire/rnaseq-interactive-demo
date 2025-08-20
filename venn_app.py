@@ -95,26 +95,25 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str)
                 patch.set_alpha(0.5)
     return plt.gcf()
 
-def draw_venn_4_6(sets_dict, colors, title, label_fontsize=14, number_fontsize=10, intersection_colors=None):
-    import matplotlib.pyplot as plt
-    from venn import venn as venn_up_to_6
-    from matplotlib import colors as mcolors
-
-    try:
-        fig = plt.figure(figsize=(10, 8), dpi=200)
-        plt.title(title, fontsize=label_fontsize + 4)
-        cmap = mcolors.ListedColormap(colors[:len(sets_dict)])
-
-        ax = venn_up_to_6(sets_dict, cmap=cmap)
-
-        for text in ax.texts:
-            if text:
-                text.set_fontsize(number_fontsize)
-        return fig
-    except Exception as e:
-        st.error(f"Error generating Venn diagram: {e}")
-        return None
-
+def draw_venn_4_6(sets_dict, colors, title, title_fontsize, label_fontsize, set_names):
+    import matplotlib.colors as mcolors
+    cmap = mcolors.ListedColormap(colors)
+    plt.figure(figsize=(9, 8), dpi=180)
+    ax = venn_up_to_6(sets_dict, cmap=cmap)
+    for text in ax.texts:
+        if text:
+            text.set_fontsize(label_fontsize)
+    plt.title(title, fontsize=title_fontsize)
+    used = set()
+    for text in ax.texts:
+        label = text.get_label()
+        if label and label.isdigit():
+            x, y = text.get_position()
+            overlap_sets = text.get_label().split('∩')
+            if len(overlap_sets) == 1 and overlap_sets[0] not in used:
+                used.add(overlap_sets[0])
+                plt.annotate(overlap_sets[0], (x, y + 0.2), ha='center', fontsize=label_fontsize + 2, fontweight='bold')
+    st.pyplot(plt.gcf(), use_container_width=True)
 
 
 def fig_download_buttons(fig):
