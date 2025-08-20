@@ -3,3 +3,4 @@ plotly
 streamlit
 matplotlib
 matplotlib_venn
+venn
