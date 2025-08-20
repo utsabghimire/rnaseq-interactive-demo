@@ -4,3 +4,4 @@ streamlit
 matplotlib
 matplotlib_venn
 venn
+seaborn
