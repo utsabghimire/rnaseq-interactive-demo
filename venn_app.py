@@ -5,9 +5,8 @@ from typing import Dict, Set, List
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 from matplotlib_venn import venn2, venn3
-from venn import venn as venn_up_to_6
+from venn import venn as venn_up_to_6  # pip install venn
 
 st.set_page_config(page_title="Multi-Set Venn (up to 6)", layout="wide")
 
@@ -104,17 +103,7 @@ def draw_venn_4_6(sets_dict, colors, title, title_fontsize, label_fontsize, set_
         if text:
             text.set_fontsize(label_fontsize)
     plt.title(title, fontsize=title_fontsize)
-    used = set()
-    for text in ax.texts:
-        label = text.get_label()
-        if label and label.isdigit():
-            x, y = text.get_position()
-            overlap_sets = text.get_label().split('∩')
-            if len(overlap_sets) == 1 and overlap_sets[0] not in used:
-                used.add(overlap_sets[0])
-                plt.annotate(overlap_sets[0], (x, y + 0.2), ha='center', fontsize=label_fontsize + 2, fontweight='bold')
-    st.pyplot(plt.gcf(), use_container_width=True)
-
+    return plt.gcf()
 
 def fig_download_buttons(fig):
     col1, col2 = st.columns(2)
@@ -127,7 +116,8 @@ def fig_download_buttons(fig):
         fig.savefig(svg_buf, format="svg", bbox_inches="tight")
         st.download_button("⬇️ Download SVG", svg_buf.getvalue(), file_name="venn.svg", mime="image/svg+xml")
 
-st.title("Venn Diagram Builder (up to 6 sets)")
+# UI
+st.title("🧬 Venn Diagram Builder (up to 6 sets)")
 with st.sidebar:
     mode = st.radio("Input type", ["Upload files", "Paste lists"])
     n_sets = st.slider("Number of sets", 2, 6, 3)
@@ -157,8 +147,8 @@ if sets_dict and all(len(s) > 0 for s in sets_dict.values()):
     if n_sets in (2, 3):
         fig = draw_venn_2_3(sets_dict, set_colors, title)
     else:
-        fig = draw_venn_4_6(sets_dict, set_colors, title)
-    st.pyplot(fig)
+        fig = draw_venn_4_6(sets_dict, set_colors, title, title_fontsize=16, label_fontsize=10, set_names=set_names)
+    st.pyplot(fig, use_container_width=True)
     fig_download_buttons(fig)
 
     st.subheader("Intersection Table")
