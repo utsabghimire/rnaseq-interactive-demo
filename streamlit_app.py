@@ -28,7 +28,7 @@ def load_data(path: str) -> pd.DataFrame:
 
 
 def main() -> None:
-    st.title("RNA‑seq Differential Expression Explorer")
+    st.title("RNA‑seq Differential Expressions Explorer")
 
     st.sidebar.header("Settings")
     uploaded_file = st.sidebar.file_uploader(
