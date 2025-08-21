@@ -64,6 +64,8 @@ def sets_to_intersections(sets_dict: Dict[str, Set[str]]) -> pd.DataFrame:
     return pd.DataFrame(data).sort_values(["Size", "Sets"], ascending=[False, True])
 
 def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str, title_fontsize: int, label_fontsize: int) -> plt.Figure:
+    from matplotlib.patches import Patch
+
     names = list(sets_dict.keys())
     n = len(names)
     plt.figure(figsize=(7, 6), dpi=180)
@@ -71,16 +73,19 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str,
 
     if n == 2:
         v = venn2([sets_dict[names[0]], sets_dict[names[1]]], set_labels=(names[0], names[1]))
+        v.get_patch_by_id('10').set_color(colors[0])
+        v.get_patch_by_id('01').set_color(colors[1])
     else:
         v = venn3([sets_dict[n] for n in names], set_labels=names)
+        v.get_patch_by_id('100').set_color(colors[0])
+        v.get_patch_by_id('010').set_color(colors[1])
+        v.get_patch_by_id('001').set_color(colors[2])
 
-    # Apply colors
-    for i, patch in enumerate(v.patches):
+    # Set alpha and label font sizes
+    for patch in v.patches:
         if patch:
-            patch.set_facecolor(colors[i % len(colors)])
             patch.set_alpha(0.5)
 
-    # Apply label sizes
     for label in v.set_labels:
         if label:
             label.set_fontsize(label_fontsize)
@@ -89,6 +94,7 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str,
             text.set_fontsize(label_fontsize)
 
     return plt.gcf()
+
 
 
 def draw_venn_4_6(sets_dict, colors, title, title_fontsize, label_fontsize):
