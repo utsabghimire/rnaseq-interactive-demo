@@ -49,19 +49,30 @@ def read_file_to_set(file, split_mode: str, case_sensitive: bool) -> Set[str]:
         text = file.read().decode("utf-8", errors="ignore")
         return coerce_items(text, split_mode, case_sensitive)
 
-def sets_to_intersections(sets_dict: Dict[str, Set[str]]) -> pd.DataFrame:
+def sets_to_mutually_exclusive_intersections(sets_dict: Dict[str, Set[str]]) -> pd.DataFrame:
     from itertools import combinations
+
     names = list(sets_dict.keys())
-    data = []
-    for k in range(1, len(names) + 1):
+    all_intersections = []
+    already_seen = set()
+
+    # Start with largest intersections first (e.g., ABC before AB)
+    for k in range(len(names), 0, -1):
         for comb in combinations(names, k):
-            inter = set.intersection(*(sets_dict[name] for name in comb))
-            data.append({
-                "Sets": " ∩ ".join(comb),
-                "Size": len(inter),
-                "Elements": ", ".join(sorted(inter))
-            })
-    return pd.DataFrame(data).sort_values(["Size", "Sets"], ascending=[False, True])
+            label = " ∩ ".join(comb)
+            intersection = set.intersection(*(sets_dict[name] for name in comb))
+            # Remove already counted elements in larger intersections
+            exclusive = intersection - already_seen
+            if exclusive:
+                all_intersections.append({
+                    "Sets": label,
+                    "Size": len(exclusive),
+                    "Elements": ", ".join(sorted(exclusive))
+                })
+                already_seen.update(exclusive)
+
+    return pd.DataFrame(all_intersections).sort_values("Size", ascending=False)
+
 
 def blend_colors(*hex_colors):
     """Blend multiple hex colors equally."""
@@ -184,7 +195,7 @@ if sets_dict and all(len(s) > 0 for s in sets_dict.values()):
     fig_download_buttons(fig)
 
     st.subheader("🔄 Intersection Table")
-    inter_df = sets_to_intersections(sets_dict)
+    inter_df = sets_to_mutually_exclusive_intersections(sets_dict)
     st.dataframe(inter_df)
     st.download_button("⬇️ Download Intersection Table (CSV)", inter_df.to_csv(index=False).encode("utf-8"), file_name="intersections.csv")
 
