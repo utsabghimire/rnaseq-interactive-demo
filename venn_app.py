@@ -68,17 +68,28 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str,
     n = len(names)
     plt.figure(figsize=(7, 6), dpi=180)
     plt.title(title, fontsize=title_fontsize)
+
     if n == 2:
         v = venn2([sets_dict[names[0]], sets_dict[names[1]]], set_labels=(names[0], names[1]))
     else:
         v = venn3([sets_dict[n] for n in names], set_labels=names)
+
+    # Apply colors
+    for i, patch in enumerate(v.patches):
+        if patch:
+            patch.set_facecolor(colors[i % len(colors)])
+            patch.set_alpha(0.5)
+
+    # Apply label sizes
     for label in v.set_labels:
         if label:
             label.set_fontsize(label_fontsize)
     for text in v.subset_labels:
         if text:
             text.set_fontsize(label_fontsize)
+
     return plt.gcf()
+
 
 def draw_venn_4_6(sets_dict, colors, title, title_fontsize, label_fontsize):
     import matplotlib.colors as mcolors
