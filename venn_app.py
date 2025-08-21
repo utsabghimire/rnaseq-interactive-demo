@@ -63,8 +63,16 @@ def sets_to_intersections(sets_dict: Dict[str, Set[str]]) -> pd.DataFrame:
             })
     return pd.DataFrame(data).sort_values(["Size", "Sets"], ascending=[False, True])
 
+def blend_colors(*hex_colors):
+    """Blend multiple hex colors equally."""
+    if not hex_colors:
+        return "#aaaaaa"
+    rgb_vals = [tuple(int(c[i:i+2], 16) for i in (1, 3, 5)) for c in hex_colors]
+    avg_rgb = tuple(sum(vals) // len(vals) for vals in zip(*rgb_vals))
+    return f'#{avg_rgb[0]:02x}{avg_rgb[1]:02x}{avg_rgb[2]:02x}'
+
 def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str, title_fontsize: int, label_fontsize: int) -> plt.Figure:
-    from matplotlib.patches import Patch
+    from matplotlib_venn import venn2, venn3
 
     names = list(sets_dict.keys())
     n = len(names)
@@ -73,19 +81,31 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str,
 
     if n == 2:
         v = venn2([sets_dict[names[0]], sets_dict[names[1]]], set_labels=(names[0], names[1]))
-        v.get_patch_by_id('10').set_color(colors[0])
-        v.get_patch_by_id('01').set_color(colors[1])
+        patches = {
+            '10': colors[0],
+            '01': colors[1],
+            '11': blend_colors(colors[0], colors[1]),
+        }
     else:
         v = venn3([sets_dict[n] for n in names], set_labels=names)
-        v.get_patch_by_id('100').set_color(colors[0])
-        v.get_patch_by_id('010').set_color(colors[1])
-        v.get_patch_by_id('001').set_color(colors[2])
+        patches = {
+            '100': colors[0],
+            '010': colors[1],
+            '001': colors[2],
+            '110': blend_colors(colors[0], colors[1]),
+            '101': blend_colors(colors[0], colors[2]),
+            '011': blend_colors(colors[1], colors[2]),
+            '111': blend_colors(colors[0], colors[1], colors[2]),
+        }
 
-    # Set alpha and label font sizes
-    for patch in v.patches:
-        if patch:
-            patch.set_alpha(0.5)
+    # Apply colors to each patch
+    for pid, color in patches.items():
+        p = v.get_patch_by_id(pid)
+        if p:
+            p.set_color(color)
+            p.set_alpha(0.6)
 
+    # Font sizes
     for label in v.set_labels:
         if label:
             label.set_fontsize(label_fontsize)
@@ -94,6 +114,7 @@ def draw_venn_2_3(sets_dict: Dict[str, Set[str]], colors: List[str], title: str,
             text.set_fontsize(label_fontsize)
 
     return plt.gcf()
+
 
 
 
